@@ -1,0 +1,18 @@
+HorizonShort
+
+let
+    Source = HorizonBinary,
+    #"Filtered Rows" = Table.SelectRows(Source, each ([#"Yes/No"] = 1)),
+    #"Grouped Rows" = Table.Group(#"Filtered Rows", {"Horizon"}, {{"Min Date", each List.Min([Date]), type date}}),
+    
+    #"Filtered Rows1" = Table.SelectRows(#"Grouped Rows", each [Horizon] = "CURRENT WEEK" or [Horizon] = "LAST 14 DAYS" or [Horizon] = "LAST 30 DAYS" or [Horizon] = "LAST 60 DAYS" or 
+                                                               [Horizon] = "LAST 7 DAYS" or [Horizon] = "LAST 90 DAYS" or [Horizon] = "LAST MONTH" or [Horizon] = "LAST WEEK" or 
+                                                               [Horizon] = "LAST YEAR" or [Horizon] = "CURRENT YEAR" or [Horizon] = "CURRENT MONTH" or
+                                                               [Horizon] = "WTD" or [Horizon] = "MTD" or [Horizon] = "PREVIOUS WTD" or [Horizon] = "PREVIOUS MTD" or [Horizon] = "YESTERDAY" or
+                                                               [Horizon] = "YTD" or [Horizon] = "PREVIOUS YTD" or [Horizon] = "ALL TIME" or [Horizon] = "TODAY"
+                         ),
+
+    #"Added Index" = Table.AddIndexColumn(#"Filtered Rows1", "Index", 0, -1),
+    #"Removed Columns" = Table.RemoveColumns(#"Added Index",{"Min Date"})
+in
+    #"Removed Columns"
