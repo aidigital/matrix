@@ -1,0 +1,102 @@
+let
+  /* Modify as necessary */ 
+    FROM_YEAR = 2014,
+    YEARS_INTO_THE_FUTURE = 1,  // (e.g. if you're in 2018, the calendar would finish on 31-Dec-2019)
+
+  /* start UDF. Don't touch, or I'll haunt you! */
+  fnCreateCalendar = (StartDate as date, EndDate as date, optional Culture as nullable text) as table => 
+  let 
+    DayCount = Duration.Days(Duration.From(EndDate - StartDate)), 
+    Source = List.Dates(StartDate,DayCount,#duration(1,0,0,0)), 
+    TableFromList = Table.FromList(Source, Splitter.SplitByNothing()),    
+    ChangedType = Table.TransformColumnTypes(TableFromList,{{"Column1", type date}}), 
+    RenamedColumns = Table.RenameColumns(ChangedType,{{"Column1", "Date"}}), 
+    InsertDateTime = Table.AddColumn(RenamedColumns, "DateTime", each DateTime.From([Date])), 
+    InsertYear = Table.AddColumn(InsertDateTime , "Year", each Date.Year([Date])), 
+    InsertQuarter = Table.AddColumn(InsertYear, "QuarterOfYear", each Date.QuarterOfYear([Date])), 
+    InsertMonth = Table.AddColumn(InsertQuarter, "MonthOfYear", each Date.Month([Date])), 
+    InsertDay = Table.AddColumn(InsertMonth, "DayOfMonth", each Date.Day([Date])), 
+    InsertDayInt = Table.AddColumn(InsertDay, "DateInt", each [Year] * 10000 + [MonthOfYear] * 100 + [DayOfMonth]), 
+    InsertMonthName = Table.AddColumn(InsertDayInt, "MonthName", each Date.ToText([Date], "MMMM", Culture), type text), 
+    InsertCalendarMonth = Table.AddColumn(InsertMonthName, "MonthInCalendar", each ( Text.Upper(try(Text.Range([MonthName],0,3)) otherwise [MonthName])) & " " & Number.ToText([Year])), 
+    InsertCalendarQtr = Table.AddColumn(InsertCalendarMonth, "QuarterInCalendar", each "Q" & Number.ToText([QuarterOfYear]) & " " & Number.ToText([Year])), 
+    InsertDayWeek = Table.AddColumn(InsertCalendarQtr, "DayInWeek", each Date.DayOfWeek([Date],1)+1), 
+    InsertDayName = Table.AddColumn(InsertDayWeek, "DayOfWeekName", each Text.Start(Text.Upper(Date.ToText([Date], "dddd", Culture)),3), type text), 
+    InsertWeekEndingFriday = Table.AddColumn(InsertDayName, "WeekEndingFriday", each Date.EndOfWeek([Date],6), type date),
+    InsertWeekEndingSunday = Table.AddColumn(InsertWeekEndingFriday, "WeekEndingSunday", each DateTime.From(Date.EndOfWeek([Date], 1)), type datetime),    
+    InsertCurrentThursday = Table.AddColumn(InsertWeekEndingSunday, "CurrentThursday", each Date.AddDays([Date], -Date.DayOfWeek([Date],1) + 3), type date), 
+    InsertISOWeekJan4 = Table.AddColumn(InsertCurrentThursday, "ISOWeekJan4", each Date.FromText(Number.ToText(Date.Year([CurrentThursday])) & "-01-04") ,type date), 
+    InsertISOWeekYear = Table.AddColumn(InsertISOWeekJan4, "ISOWeekYear", each Date.Year([CurrentThursday])) ,   
+    InsertISOWeekFirstMon = Table.AddColumn(InsertISOWeekYear, "ISOWeekFirstMon", each 
+        if [CurrentThursday] < [ISOWeekJan4] 
+        then Date.AddDays([CurrentThursday],-3) 
+        else Date.AddDays([ISOWeekJan4], - Date.DayOfWeek([ISOWeekJan4],1) ) 
+      ,type date), 
+    InsertISOWeekNum = Table.AddColumn(InsertISOWeekFirstMon, "ISOWeekNum", each Number.RoundUp(((Duration.Days(Duration.From([Date] - [ISOWeekFirstMon]))+1) /7 )), type number), 
+    InsertISOWeekID = Table.AddColumn(InsertISOWeekNum, "ISOWeekID", each [ISOWeekYear] * 100 + [ISOWeekNum], type number), 
+    InsertISOWeekName = Table.AddColumn(InsertISOWeekID, "ISOWeekName", each Text.From([ISOWeekYear]) & "W" & Text.End( "0" & Text.From(([ISOWeekNum]*10)  + [DayInWeek]),3)), 
+    InsertISOWeekNameLong = Table.AddColumn(InsertISOWeekName, "ISOWeekNameLong", each Text.From([ISOWeekYear]) & "-W" & Text.End( "0" & Text.From([ISOWeekNum]),2) & "-" & Text.From([DayInWeek])),
+
+    fnPeriod445a = (weekNum) => let 
+      Periods = 
+        { 
+            {(x)=>x<5,  [P=1,Q=1]}, 
+      {(x)=>x<9,  [P=2,Q=1]}, 
+      {(x)=>x<14, [P=3,Q=1]}, 
+      {(x)=>x<18, [P=4,Q=1]}, 
+      {(x)=>x<22, [P=5,Q=2]}, 
+      {(x)=>x<27, [P=6,Q=2]}, 
+      {(x)=>x<31, [P=7,Q=3]}, 
+      {(x)=>x<35, [P=8,Q=3]}, 
+      {(x)=>x<40, [P=9,Q=3]}, 
+            {(x)=>x<44, [P=10,Q=4]}, 
+            {(x)=>x<48, [P=11,Q=4]}, 
+            {(x)=>true, [P=12,Q=4]} 
+        }, 
+      Result = List.First(List.Select(Periods, each _{0}(weekNum))){1} 
+    in 
+      Result,
+
+    InsertPeriod445 = Table.AddColumn(InsertISOWeekNameLong, "Period445Record", each fnPeriod445a([ISOWeekNum])), 
+    ExpandPeriod445 = Table.ExpandRecordColumn(InsertPeriod445, "Period445Record", {"P","Q" }, {"Period445", "Quarter445"}), 
+    RemovedColumns = Table.RemoveColumns(ExpandPeriod445,{"CurrentThursday", "ISOWeekFirstMon"}),
+    
+    //AI Added
+    WeekOfYear = Table.AddColumn(RemovedColumns, "WeekOfYear", each Date.WeekOfYear([Date])),  //Different than the ISO Week; This always starts at 1 (unlike the ISO, which sometimes starts at 52)
+    WeekOfMonth = Table.AddColumn(WeekOfYear, "WeekOfMonth", each Date.WeekOfMonth([Date])),  //Can go up to 6 (ex: 30 and 31-Jan-2017)
+    YearWeek = Table.AddColumn(WeekOfMonth, "YearWeek", each Number.ToText([Year]) &"-wk"& Number.ToText([WeekOfYear]) )
+  in 
+    YearWeek,
+  /* end UDF */
+
+
+    /* start building the table */
+    TO_YEAR = Date.Year(DateTime.Date(DateTime.LocalNow()))+1 + YEARS_INTO_THE_FUTURE,
+    Source = fnCreateCalendar(#date(FROM_YEAR, 1, 1), #date(TO_YEAR, 1, 1), null),
+    ChangedType = Table.TransformColumnTypes(Source,{{"DateTime", type datetime}, {"Year", Int64.Type}, {"QuarterOfYear", Int64.Type}, {"MonthOfYear", Int64.Type}, {"DayOfMonth", Int64.Type}, {"DateInt", Int64.Type}, {"DayInWeek", Int64.Type}, {"ISOWeekYear", Int64.Type}, {"ISOWeekNum", Int64.Type}, {"ISOWeekID", Int64.Type}, {"Period445", Int64.Type}, {"Quarter445", Int64.Type}, {"WeekOfYear", Int64.Type}, {"WeekOfMonth", Int64.Type}}),
+
+    UniqueMonthInCalendar=Table.Distinct(ChangedType[[MonthInCalendar]]),
+    AddIndexMonthInCalendar = Table.AddIndexColumn(UniqueMonthInCalendar, "YearMonthIndex", 1, 1),
+
+    Join = Table.NestedJoin(ChangedType,{"MonthInCalendar"},AddIndexMonthInCalendar,{"MonthInCalendar"},"NewColumn",JoinKind.Inner),
+    ExpandYearMonthIndex = Table.ExpandTableColumn(Join, "NewColumn", {"YearMonthIndex"}, {"YearMonthIndex"}),
+    WeekendLabel = Table.AddColumn(ExpandYearMonthIndex, "Weekend Label", each if [DayInWeek]=6 or [DayInWeek]=7 then "WEEKEND" else "WORKDAY"),
+
+    // CALCULATE FISCAL YEAR & FISCAL QUARTER
+    StartOfFiscalYear = 4, /* Financial year starts on: 01-APRIL */
+
+    FiscalYear = Table.AddColumn(WeekendLabel, "Fiscal Year", each if [MonthOfYear]>=StartOfFiscalYear then [Year]+1 else [Year]),
+    FiscalYear_ChangeToNr = Table.TransformColumnTypes(FiscalYear,{{"Fiscal Year", Int64.Type}}),
+    FiscalPeriod = Table.AddColumn(FiscalYear_ChangeToNr, "Fiscal Period", each if [MonthOfYear]>=StartOfFiscalYear then [MonthOfYear]-(StartOfFiscalYear-1) else [MonthOfYear]+(12-StartOfFiscalYear+1)),
+    FiscalPeriod_ChangeToNr = Table.TransformColumnTypes(FiscalPeriod,{{"Fiscal Period", Int64.Type}}),
+    
+    FiscalPeriod_DividedBy_3 = Table.AddColumn(FiscalPeriod_ChangeToNr, "Inserted Division", each [Fiscal Period] / 3, type number),
+    DivisionRoundedUp = Table.TransformColumns(FiscalPeriod_DividedBy_3,{{"Inserted Division", Number.RoundUp, Int64.Type}}),
+    Rename_Division_To_FiscalQuarter = Table.RenameColumns(DivisionRoundedUp,{{"Inserted Division", "Fiscal Quarter"}}),
+    FiscalQuarter_Name = Table.AddColumn(Rename_Division_To_FiscalQuarter, "Fiscal Quarter Name", each "Q" & Text.From([Fiscal Quarter])),
+
+    #"Fiscal Year-Quarter" = Table.AddColumn(FiscalQuarter_Name, "Fiscal Year-Quarter", each Text.From([Fiscal Year]) & " " & [Fiscal Quarter Name]),
+    #"Fiscal Year-Month Order" = Table.AddColumn(#"Fiscal Year-Quarter", "Fiscal Year-Period Order", each [Fiscal Year]*100 + [Fiscal Period]),
+    #"Fiscal Year-Month" = Table.AddColumn(#"Fiscal Year-Month Order", "Fiscal Year-Period", each Text.From([Fiscal Year]) & "-" & Text.From([Fiscal Period]))
+in
+    #"Fiscal Year-Month"
