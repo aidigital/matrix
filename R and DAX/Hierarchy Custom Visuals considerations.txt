@@ -1,0 +1,24 @@
+1. Custom Visual "Hierarchy Chart by Akvelon"
+a) An important thing to keep in mind with the marketplace visual "Hierarchy Chart by Akvelon", and which would require user education in a real life situation, is that this visual needs 1 root (a cell where the parent is blank).
+
+If the user makes a selection which filters out that root (or if some workaround would inadvertently introduce two roots, i.e. 2 null parents), the visual shows a warning and doesn't display anything.
+This is not incorrect behaviour, however, it prevents from looking at only a smaller part of the hierarchy (or any part of the hierarchy that excludes the root for that matter).
+
+b) Let's say we have the below hierarchy, with "Book1" being the top root:
+   Book1 <- Book2 <- Book3
+   If the measure that we drag into the "Values" field of this visual has some value for Book1 and Book3, but is blank for Book2 (the "middle man" so to speak), the visual will display a "non-exising id" warning.
+   Depending on the situatation, we could simply supress blanks in our measure by adding a "+0", but we might be better off taking a copy of that measure first.
+
+
+2. Custom Visual "HierarchySlicer"
+Apart from the "Hierarchy Chart by Akvelon", another marketplace visual I've seen businesses use to show hierarchies is the "HierarchySlicer". However, I've found that it has issues displaying the hierarchy correctly when a measure is placed in the Values category!
+
+
+3. Custom Visual "Pie Charts Tree"
+This one looks very stylish and modern, however:
+a) it can make the cross-filtering among other visual on the page not work!
+I'm not sure if this happens only in certain cases, but I've seen it happen. That's why I didn't put it on the main page.
+
+
+b) it doesn't work amazingly well for Parent-Children hierarchies, because it displays everything (even "grandchildren") as the immediate children of "All".
+However, it does seem to work better for Category-Subcategory kind of hierarchies.
