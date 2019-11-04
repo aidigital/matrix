@@ -1,4 +1,0 @@
-Calendar Table:
-
--> Add this Calculated Column: YearMonthNumber = 'Calendar'[Year]*100+'Calendar'[MonthOfYear]
--> Column MonthInCalendar is being sorted by YearMonthNumber
